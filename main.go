@@ -2,7 +2,9 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"strings"
@@ -73,12 +75,14 @@ func (rc *ReleaseComparer) HasUpdate() bool {
 
 	currentSemver, err := semver.NewVersion(currentVersion)
 	if err != nil {
-		panic(fmt.Errorf("failed to parse current version %s %s: %w", rc.Current.Name, currentVersion, err))
+		log.Printf("Failed to parse current version %s %s: %v\n", rc.Current.Name, currentVersion, err)
+		return false
 	}
 
 	latestSemver, err := semver.NewVersion(latestVersion)
 	if err != nil {
-		panic(fmt.Errorf("failed to parse latest version %s %s: %w", rc.Current.Name, latestVersion, err))
+		log.Printf("Failed to parse latest version %s %s: %v\n", rc.Current.Name, latestVersion, err)
+		return false
 	}
 
 	return currentSemver.LessThan(latestSemver)
@@ -168,6 +172,8 @@ func (um *UpdateManager) GetReleaseComparer(release Release) (*ReleaseComparer, 
 }
 
 func (um *UpdateManager) CheckForUpdates() error {
+	var err error
+
 	comparisons := make([]*ReleaseComparer, len(um.Helmfile.Releases))
 
 	var wg sync.WaitGroup
@@ -176,9 +182,10 @@ func (um *UpdateManager) CheckForUpdates() error {
 		go func(i int, release Release) {
 			defer wg.Done()
 
-			comparer, err := um.GetReleaseComparer(release)
+			var comparer *ReleaseComparer
+			comparer, err = um.GetReleaseComparer(release)
 			if err != nil {
-				panic(err)
+				err = errors.Join(err, fmt.Errorf("failed to get release comparer for release %v: %v", release.Name, err))
 			}
 
 			comparisons[i] = comparer
@@ -188,7 +195,7 @@ func (um *UpdateManager) CheckForUpdates() error {
 
 	um.Comparisons = comparisons
 
-	return nil
+	return err
 }
 
 func getColumnPaddings(comparisons []*ReleaseComparer) (int, int) {
@@ -212,21 +219,21 @@ func main() {
 
 	helmfile, err := NewHelmfile(*flagPath)
 	if err != nil {
-		panic(err)
+		log.Fatalf("Failed to load helmfile: %v", err)
 	}
 
 	updateManager := NewUpdateManager(helmfile)
 
 	if *flagUpdateRepos {
 		if err = updateManager.UpdateRepositories(); err != nil {
-			panic(err)
+			log.Fatalf("Failed to update repositories: %v", err)
 		}
 		fmt.Println()
 	}
 
 	fmt.Println("Comparing release versions...")
 	if err = updateManager.CheckForUpdates(); err != nil {
-		panic(err)
+		log.Fatalf("Failed to check for updates: %v", err)
 	}
 
 	if !updateManager.HasUpdates() {
