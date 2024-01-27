@@ -16,10 +16,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var flagPath = flag.String("path", "helmfile.yaml", "Path to helmfile.yaml.")
-var flagStatus = flag.String("status", "all", "Filter releases by status. Valid values [all|latest|outdated].")
-var flagUpdateRepos = flag.Bool("update-repos", false, "Whether or not to update helm repos.")
-
 type HelmChartInfo struct {
 	Name      string `yaml:"name"`
 	Version   string `yaml:"version"`
@@ -215,6 +211,10 @@ func getColumnPaddings(comparisons []*ReleaseComparer) (int, int) {
 }
 
 func main() {
+	flagPath := flag.String("path", "helmfile.yaml", "Path to helmfile.yaml.")
+	flagStatus := flag.String("status", "all", "Filter releases by status. Valid values [all|latest|outdated].")
+	flagUpdateRepos := flag.Bool("update-repos", false, "Whether or not to update helm repos.")
+
 	flag.Parse()
 
 	helmfile, err := NewHelmfile(*flagPath)
