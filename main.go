@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"sync"
 
@@ -15,8 +14,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var flagStatus = flag.String("status", "all", "Filter releases by status. Valid values [all|latest|outdated]")
-var flagUpdateRepos = flag.Bool("update-repos", true, "Whether or not to update helm repos.")
+var flagPath = flag.String("path", "helmfile.yaml", "Path to helmfile.yaml.")
+var flagStatus = flag.String("status", "all", "Filter releases by status. Valid values [all|latest|outdated].")
+var flagUpdateRepos = flag.Bool("update-repos", false, "Whether or not to update helm repos.")
 
 type HelmChartInfo struct {
 	Name      string `yaml:"name"`
@@ -36,10 +36,13 @@ type Helmfile struct {
 }
 
 func NewHelmfile(path string) (*Helmfile, error) {
-	fpath := filepath.Join(".", path)
-	content, err := os.ReadFile(fpath)
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return nil, fmt.Errorf("file %s does not exist", path)
+	}
+
+	content, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read file %s: %w", fpath, err)
+		return nil, fmt.Errorf("failed to read file %s: %w", path, err)
 	}
 
 	var h Helmfile
@@ -153,16 +156,14 @@ func (um *UpdateManager) GetReleaseComparer(release Release) (*ReleaseComparer, 
 		return nil, fmt.Errorf("chart %s not found", release.Chart)
 	}
 
-	latestRelease := Release{
-		Name:      release.Name,
-		Chart:     chart[0].Name,
-		Version:   chart[0].Version,
-		Installed: chart[0].Installed,
-	}
-
 	return &ReleaseComparer{
 		Current: release,
-		Latest:  latestRelease,
+		Latest: Release{
+			Name:      release.Name,
+			Chart:     chart[0].Name,
+			Version:   chart[0].Version,
+			Installed: chart[0].Installed,
+		},
 	}, nil
 }
 
@@ -185,16 +186,31 @@ func (um *UpdateManager) CheckForUpdates() error {
 	}
 	wg.Wait()
 
-	um.Comparisons = make([]*ReleaseComparer, 0, len(comparisons))
-	um.Comparisons = append(um.Comparisons, comparisons...)
+	um.Comparisons = comparisons
 
 	return nil
+}
+
+func getColumnPaddings(comparisons []*ReleaseComparer) (int, int) {
+	namePadding := 0
+	versionPadding := 0
+	for _, release := range comparisons {
+		if len(release.Name()) > namePadding {
+			namePadding = len(release.Name())
+		}
+		if len(release.Current.Version) > versionPadding {
+			versionPadding = len(release.Current.Version)
+		}
+	}
+	namePadding = namePadding + 1
+	versionPadding = versionPadding + 1
+	return namePadding, versionPadding
 }
 
 func main() {
 	flag.Parse()
 
-	helmfile, err := NewHelmfile("helmfile.yaml")
+	helmfile, err := NewHelmfile(*flagPath)
 	if err != nil {
 		panic(err)
 	}
@@ -218,22 +234,11 @@ func main() {
 		return
 	}
 
-	// Calculate the width of the longest release name
-	namePadding := 0
-	versionPadding := 0
-	for _, release := range updateManager.Comparisons {
-		if len(release.Name()) > namePadding {
-			namePadding = len(release.Name())
-		}
-		if len(release.Current.Version) > versionPadding {
-			versionPadding = len(release.Current.Version)
-		}
-	}
-	namePadding = namePadding + 1
-	versionPadding = versionPadding + 1
+	namePadding, versionPadding := getColumnPaddings(updateManager.Comparisons)
 
-	text := fmt.Sprintf(
-		"%-[1]*[2]s %-[3]*[4]s  %[3]*[5]s %[3]*[6]s",
+	fmt.Println()
+	fmt.Printf(
+		"%-[1]*[2]s %-[3]*[4]s  %[3]*[5]s %[3]*[6]s\n",
 		namePadding,
 		"Chart",
 		versionPadding,
@@ -241,8 +246,6 @@ func main() {
 		"Latest",
 		"Status",
 	)
-	fmt.Println()
-	fmt.Println(text)
 
 	for _, release := range updateManager.Comparisons {
 		status := "✅"
