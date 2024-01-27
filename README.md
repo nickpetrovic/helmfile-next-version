@@ -2,9 +2,15 @@
 
 A tool that shows which helmfile releases have a newer chart version available.
 
-![demo](docs/demo.gif)
+<img src="docs/demo.png" alt="demo" width="600px">
 
-### How to use
+### Build instructions
+
+```sh
+make build
+```
+
+### Getting started
 
 > [!NOTE]
 > Before this can be used helm must be in your `PATH` and helm chart repos used by your helmfile must have already been added via helmfile or helm.
@@ -19,10 +25,4 @@ Show the help for more options.
 
 ```sh
 helmfile-next-version -h
-```
-
-### How to build
-
-```sh
-make build
 ```
